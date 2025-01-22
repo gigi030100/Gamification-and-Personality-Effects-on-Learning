@@ -1,0 +1,713 @@
+---
+title: "researchdiss"
+output: html_document
+---
+
+```{r packages, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(kableExtra)
+library(broom)
+library(parameters)
+library(dplyr)
+library(car)
+library(ggplot2)
+library(robust)
+library(effectsize)
+library(here)
+library(readr)
+library(dplyr)
+library(correlation)
+library(psych)
+library(discovr)
+library(GPArotation)
+library(correlation)
+library(knitr)
+library(Hmisc)
+library(cowplot)
+library(gplots)
+library(discovr)
+library(sandwich)
+library(modelbased)
+library(interactions)
+```
+
+```{r data_loading, include=FALSE}
+#Raw data editted on excel to get rid of row 2 on excel as this row was just a replication of the column titles which were mistaken for data.
+raw_data_editted <- read_csv(file = "raw_data_editted.csv")
+
+raw_data_editted %>% nrow()
+
+#Removing top row
+raw_data_editted <- raw_data_editted %>% filter(StartDate != "NA")
+raw_data_editted
+raw_data_editted %>% nrow()
+```
+
+```{r data_cleaning, include=FALSE}
+#Getting rid of columns not needed ()
+raw_data <- raw_data_editted %>% select(-StartDate:-Status) #Data not needed
+
+raw_data <- raw_data %>% select(-RecordedDate:-Consent_11) #Data not needed continued
+
+raw_data <- raw_data %>% select(-Q1_1:-Q1_14) #Getting rid of motivation scale
+
+raw_data #contains the variables we're interested in
+
+#Glancing at data for wrongly coded variables
+raw_data %>% str()
+
+raw_data %>% summary() #30 NAs in under age column will be removed
+
+raw_data %>%
+  pull(age) %>%  #Two underage participants must be removed
+  table()
+
+age_removed <-raw_data %>% filter(age < 18) %>% nrow()
+age_removed
+
+
+#Keeping data of those at least 18 years old. 
+raw_data <- raw_data %>% filter(age > 17)
+
+# 2 + 30 underage removed --> 117 ppts remain in total up to this point
+raw_data %>%
+  pull(age) %>% 
+  table()
+
+
+# Creating new variable: condition (gamified = 1 control = 0)
+#NA = control condition. Values present in the gamified columns = gamified condition. 
+raw_data <- raw_data %>% 
+   mutate(condition = gamified1_Browser == "Chrome" | gamified1_Browser == "Opera" | gamified1_Browser == "Firefox" | gamified1_Browser == "Edge") 
+
+
+raw_data <- raw_data %>% mutate(condition = replace_na(condition, 0))
+raw_data %>% str()
+
+#DELETING SCALE RESPONSES WITH N/As
+#filtering ppts with n/a responses in Personality quiz
+raw_data %>% summary() #5 rows in personality quiz will be removed due to NA
+
+raw_data <- raw_data %>% filter(p1 != "NA") #5 rows removed --> 112 ppts in total up to this point
+
+
+#Deleting learning outcome responses with NAs
+raw_data %>% summary() #43 rows in leanring outcome quiz will be removed due to NAs
+raw_data <- raw_data %>% filter(Q1 != "NA") # 43 removed --> 69 ppts up to this point
+
+cleaned_data <- raw_data
+
+cleaned_data %>% str()
+
+
+
+```
+
+```{r ppt_descriptives_statistics, include=FALSE}
+# https://mivalek.github.io/adata/prac/sol/prac_03_wkst_sol.html#basic_descriptive_stats - basic descriptive stats
+
+#Description of all ages:
+age_desc <- cleaned_data %>%
+  summarise(mean = mean(age),
+            sd = sd(age),
+            min = min(age),
+            max = max(age))
+
+age_desc <- age_desc %>% 
+  modify(round, 2)
+age_desc # rounded to 2 decimal places
+
+#gender
+gender_total <- cleaned_data %>% 
+  group_by(gender) %>%
+  summarise(n = n())
+gender_total
+#male = 36
+#female = 31
+#other = 2
+
+#Use group_by() next to get age descriptive statistics by condiiton
+
+condition_age_desc <- cleaned_data %>%
+  group_by(condition) %>%
+  summarise(n = n(),
+            perc = n()/nrow(cleaned_data) * 100,
+            mean_age = mean(age, na.rm = T),
+            sd_age = sd(age, na.rm = T)) %>%
+  modify(round, 2)
+
+#description of age by condition
+age_condition <- control_condition %>%
+  summarise(mean = mean(age),
+            median = median(age),
+            min = min(age),
+            max = max(age))
+age_condition
+
+age_condition_gamified <- gamified_condition %>%
+  summarise(mean = mean(age),
+            median = median(age),
+            min = min(age),
+            max = max(age))
+age_condition_gamified
+
+
+#age descriptive statistics by gender
+gender_age_desc <- cleaned_data %>%
+  group_by(gender) %>%
+  summarise(n = n(),
+            perc = n()/nrow(cleaned_data) * 100,
+            mean_age = mean(age, na.rm = T),
+            sd_age = sd(age, na.rm = T)) %>%
+  modify(round, 2)
+
+
+#sociodemographic characteristics descriptives
+education_desc <- cleaned_data %>%
+  group_by(education) %>%
+  summarise(n = n(),
+            perc = n()/nrow(cleaned_data) * 100,
+            mean_age = mean(age, na.rm = T),
+            sd_age = sd(age, na.rm = T)) %>%
+  modify(round, 2)
+education_desc
+
+
+#DATA ONLY FOR CONTROL CONDITION
+control_condition <- cleaned_data %>% filter(condition == "0")
+
+control_gender <- control_condition %>% 
+  group_by(gender) %>%
+  summarise(n = n(),
+            perc = n()/nrow(control_condition) * 100) %>%
+  modify(round, 2)
+control_gender
+
+    #descriptives for education
+control_education <- control_condition %>% 
+  group_by(education) %>%
+  summarise(n = n(),
+            perc = n()/nrow(control_condition) * 100) %>%
+  modify(round, 2)
+control_education
+
+ #descriptives for employment
+control_employment <- control_condition %>% 
+  group_by(employment) %>%
+  summarise(n = n(),
+            perc = n()/nrow(control_condition) * 100) %>%
+  modify(round, 2)
+control_employment
+
+
+#DATA ONLY FOR gamified CONDITION
+gamified_condition <- cleaned_data %>% filter(condition == "1")
+
+gamified_gender <- gamified_condition %>% 
+  group_by(gender) %>%
+  summarise(n = n(),
+            perc = n()/nrow(gamified_condition) * 100) %>%
+  modify(round, 2)
+gamified_gender
+
+
+gamified_education <- gamified_condition %>% 
+  group_by(education) %>%
+  summarise(n = n(),
+            perc = n()/nrow(gamified_condition) * 100) %>%
+  modify(round, 2)
+gamified_education
+
+gamified_employment <- gamified_condition %>% 
+  group_by(employment) %>%
+  summarise(n = n(),
+            perc = n()/nrow(gamified_condition) * 100) %>%
+  modify(round, 2)
+gamified_employment
+
+gamified_employment <- gamified_condition %>% 
+  group_by(employment) %>%
+  summarise(n = n(),
+            perc = n()/nrow(gamified_condition) * 100) %>%
+  modify(round, 2)
+gamified_employment
+```
+
+
+
+```{r difference in means of learning outcome by condition, include=FALSE}
+#t-test for learning outcome resource: https://users.sussex.ac.uk/~jm636/tut_07_ttest.html#comparing_means_with_ttest() 
+
+lo_t <- t.test(SC1 ~ condition, data = cleaned_data, alternative = "two.sided", var.equal = T)
+lo_t
+
+learning_outcome_desc <- cleaned_data %>%
+  group_by(condition) %>%
+  summarise(n = n(),
+            mean_score = mean(SC1, na.rm = T),
+            sd_score = sd(SC1, na.rm = T)) %>%
+  modify(round, 2)
+learning_outcome_desc
+
+#Here we have:
+#The type of analysis we asked for (Two Sample t-test) and the variables we used
+#The values of t, degrees of freedom, and p
+#The 95% confidence interval around the difference in means
+#The means of each group
+
+#Interpretation: little difference between learning outcome means of experimental and control group - they're almost the same --> null hypothesis is true: gamifying R tutorial doesn't improve leanring outcome. 
+#RE: confidence interval -> it crosses zero (-1.5549514  0.8267463) -> 0 lies within the confidence interval, thus it's possible the true difference in mean equals 0. 
+
+#write-up in results
+#A T-test inferential statistic was conducted to explore the difference in learning outcome scores between participants in the gamified versus non-gamified group. T-test result dictates no significant difference between the two groups (t (67) = -0.61, p = .544) with the two means being almost the same (Mdiff = -0.36, 95% CI [-1.55, 0.83]) just as we anticipated. Although the mean learning outcome score was higher in the gamified group (M = 7.80, SD = 2.28) than the non-gamified group (M = 7.44, SD = 2.58), the null hypothesis can be retained.
+
+#Visual mean plot
+#Recoding condition as factor for the plot
+cleaned_data <- cleaned_data %>%
+  mutate(condition = as.factor(condition)) #only temporary to create a means plot
+
+#means plot for learning outcome score between two conditions
+learningoutcome_plot <- cleaned_data %>% 
+  ggplot(aes(x = condition, y = SC1)) +
+  labs(x = "R programming tutorial", y = "Mean score for Learning Outcome quiz") +
+  theme_cowplot()
+learningoutcome_plot
+
+learningoutcome_plot +
+  geom_point(position = "jitter") 
+
+learningoutcome_plot <- learningoutcome_plot +
+  geom_point(stat = "summary",
+             fun = "mean",
+             size = 4) +
+  ylim(0, 10) + 
+  stat_summary(cleaned_data="mean_cl_boot",geom="errorbar", width = .05) +
+  theme(axis.title = element_text(face = "bold"))
+learningoutcome_plot
+
+cleaned_data <- cleaned_data %>%
+  mutate(condition = as.numeric(condition))
+
+cleaned_data %>% str()
+```
+
+
+```{r tutorials, include=FALSE}
+# Resources: https://canvas.sussex.ac.uk/courses/12722/assignments/syllabus
+
+
+#2. Categorial predictors https://canvas.sussex.ac.uk/courses/12722/pages/week-4 discovr_11
+learnr::run_tutorial("discovr_11", package = "discovr")
+#3. Contrast coding https://canvas.sussex.ac.uk/courses/12722/pages/week-5 discovr_11
+#4. Comparing means adjusted for covariates (other predictors) https://canvas.sussex.ac.uk/courses/12722/pages/week-6 discovr_12 
+learnr::run_tutorial("discovr_12", package = "discovr")
+
+learnr::run_tutorial("discovr_10", package = "discovr") #moderation analysis
+
+
+```
+
+
+
+```{r centre_variables, include=FALSE}
+#preparing data for moderation analysis
+#Questions for Openness trait 
+  #p5, p15, p25, p35, p40, p45, p50 (positively-phrased items - no need to reverse code)
+  #p10, p20, p30 (negatively phrased items - need to revere score this)
+openess_questions <- cleaned_data %>%
+  select(p5, p15, p25, p35, p40, p45, p50, p10, p20, p30)
+
+#Reverse score p10, p20, p30
+  ##Rule of reverse-coding: With the reverse scoring, reverse score = max score for likert scale + 1 - original score
+reverse_openness <- openess_questions %>%
+  mutate(reverse_p10 = (6-p10), reverse_p20 = (6-p20), reverse_p30 = (6-p30))
+reverse_openness
+
+reverse_openness <- reverse_openness %>% #new variable now contains both positive and reverse phrased items
+  select(p5, p15, p25, p35, p40, p45, p50, reverse_p10, reverse_p20, reverse_p30)
+
+#composite score of openness personality dimension (average score of participants in the openness domain)
+openness_composite <- reverse_openness %>%
+  rowwise() %>% 
+  summarise(openness_composite = mean(c(p5:reverse_p30)))
+openness_composite
+
+cleaned_data <- cleaned_data %>%
+  mutate(openness_composite)
+
+cleaned_data <- cleaned_data %>%
+  mutate(condition = as.factor(condition))
+
+condition_openness_learning_data <- cleaned_data %>%
+  select(condition, openness_composite, SC1)
+
+condition_openness_learning_data <- cleaned_data %>%
+  select(condition, openness_composite, SC1)
+condition_openness_learning_data
+
+#Centre continuous predictor (openness) to make the bs for lower-order effects interpretable
+condition_openness_learning_data <- condition_openness_learning_data %>% 
+  dplyr::mutate(
+    openness_centre = openness_composite - mean(openness_composite, na.rm = TRUE)
+  )
+condition_openness_learning_data
+
+
+```
+
+```{r fitting_lm_for_both_variables, include=FALSE}
+#Linear model: SC1i = b0 + b1conditioni + b2opennessi + error
+learnr::run_tutorial("discovr_10", package = "discovr") #moderation analysis 
+
+
+#moderation analysis
+linearmodel1 <- lm(SC1 ~ openness_centre*condition, data = condition_openness_learning_data)
+broom::tidy(linearmodel1, conf.int = TRUE)
+
+
+
+tidy(linearmodel1, conf.int = TRUE) %>%
+  mutate(across(where(is.numeric), ~ round(., 3))
+  )
+
+glance(linearmodel1, digits = 3)
+
+#Robust linear model
+linearmodel1_robust <- model_parameters(linearmodel1, robust = TRUE, vcov.type = "HC4", digits = 3)
+
+broom::tidy(linearmodel1, conf.int = TRUE)
+linearmodel1_robust
+parameters::model_parameters(linearmodel1, bootstrap = TRUE, digits = 3)
+
+
+summary(linearmodel1)
+
+
+```
+FACTOR ANALYSIS SECTION
+
+http://milton-the-cat.rocks/learnr/r/discovr_17/#section-factor-analysis-2
+
+
+```{r factor_analysis, include=FALSE}
+#Purpose is to explore whether this study contains similar factor structure as the original by scale by Goldberg
+#pre-analysis
+personality_qs <- cleaned_data %>%
+  select(p1:p50)
+
+
+personality_qs %>%
+  cor() %>% 
+  psych::cortest.bartlett(n = 69) #Bartlett’s test is highly significant, χ2(1225) = 2329.143, p < .001, showing that our data is distributed This significant value only really tells us that we don’t have a massive problem and that 
+
+#KMO (The Kaiser–Meyer–Olkin) test: check sampling adequacy. Varies between 0 and 1 with a value of 0 indicating that factor analysis is likely to be inappropriate.  A value close to 1 indicates that patterns of correlations are relatively compact and so factor analysis should yield distinct and reliable factors. Values smaller than 0.5 should lead you either to collect more data or to rethink which variables to include:
+#Marvellous: values in the 0.90s
+#Meritorious: values in the 0.80s
+#Middling: values in the 0.70s
+#Mediocre: values in the 0.60s
+#Miserable: values in the 0.50s
+
+personality_qs %>%
+  cor() %>% 
+  psych::KMO() #KMO value of 0.46 --> miserable value --> but still higher than minimum value for an adequate sample.    FA still appropriate
+
+#Factor extraction method --> parallel analysis
+personality_qs %>% 
+  psych::fa.parallel(fa = "fa") ##Given we want to keep factors that have eigen values larger than we’d expect in data that has no underlying factors, we want to keep factors that have triangles (eigenvalues) that fall above the red line. Here, the first 6 factors have eigenvalues larger than their random data counterpart. --> 6 factors found
+
+#factor rotation
+
+big5_fa <- psych::fa(personality_qs,
+                          nfactors = 6,
+                          fm = "minres",
+                          rotate = "oblimin", #oblique rotation
+                          scores = "tenBerge",
+                          max.iter = 50,
+                          use = "pairwise",
+                          cor = "cor"
+                          )
+big5_fa
+
+  
+
+#oblique factor rotation appropriate as the big 5 personality scale aims to measure the 5 different dimensions of personality https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5826584/
+#These are all non-zero indicating that factors are correlated (and oblique rotation was appropriate). It also tells us the degree to which factors are correlated. 
+
+#we can see that all 6 factors in combination explain 0.49 of the overall variance (49%) --> based on cumulative var
+#Correlation between factors also shown, almost all to be non-zeros. 
+
+#There are several fit indices that tell us how well the model fits the data:
+#Tucker Lewis Index of factoring reliability: values above about 0.9 indicate good fit. Our value of 0.761 indicating it's not a good fit. However,
+#RMSEA: values less than about 0.06 indicate good fit ideally with the upper confidence interval being below 0.08. Our model has a value of 0.051 and a confidence interval of 0.04 and 0.07 indicating good fit. 
+
+#FACTOR LOADING (6 factors)
+big5_fa %>%
+  parameters::model_parameters(sort = TRUE, threshold = 0.2) #despite the Big 5 being an established scale, a threshold of 0.2 was implemented to allow for a flexibility in where cross-loading items were allocated based on where they make more conceptual sense. 
+
+#MR1 - EXTRAVERSION
+# 21 I start conversations.
+# 31 I talk to a lot of different people at parties.
+# 46 I am quiet around strangers.
+# p1 I am the life of the party.
+#11 I feel comfortable around people. HIGHEST LOADING
+#6 I don't talk a lot HIGHEST LOADING
+#36 I don't like to draw attention to myself HIGHEST LOADING
+#16 I keep in the background. HIGHEST LOADING
+#41 I don't mind being the centre of attention. HIGHEST LOADING
+#26 I have little to say. HIGHEST LOADING
+
+#MR2 - OPENNESS
+#50 I am full of ideas.
+#25 I have excellent ideas.
+#15 I have a vivid imagination.
+#10 I have difficulty understanding abstract ideas. Highest loading
+#30 I do not have a good imagination. HIGHEST LOADING
+#5 I have a rich vocabulary. HIGHEST LOADING
+#40 I use difficult words. HIGHEST LOADING
+#20 I am not interested in abstract ideas.(HIGHEST LOADING)
+#45 I spend time reflecting on things. HIGHEST LOADING
+#13 I pay attention to details.  HIGHEST LOADING <<<NOT THE SAME AS ORIGINAL SCALE>>>
+
+
+#MR3 - NEUROTICISM
+# 39 I have frequent mood swings. 
+#34 I change my mood a lot. 
+#44 I get irritated easily.
+#29 I get upset easily.
+#4 I get stressed out easily HIGHEST LOADING
+#14 I worry about things HIGHEST LOADING
+#49 I often feel blue. HIGHEST LOADING
+#9 I am relaxed most of the time HIGHEST LOADING
+#24 I am easily disturbed.HIGHEST LOADING
+
+#MR4 AGREEABLENESS 
+#32 I am not really interested in others.
+#2 I feel little concern for others.
+#22, I am not interested in other people's problems. HIGHEST LOADING
+#3, I am always prepared. <<<NOT THE SAME AS ORIGINAL SCALE>>>
+#7 I am interested in people. HIGHEST LOADING
+
+
+
+#MR5 AGREEABLENESS
+#47 I make people feel at ease.
+#17 I sympathize with others' feelings.
+#42 I feel others' emotions.
+#27 I have a soft heart.HIGHEST LOADING
+#35, I am quick to understand things. HIGHEST LOADING <<<NOT THE SAME AS ORIGINAL SCALE>>>
+#37, I take time out for others. HIGHEST LOADING
+#19 I seldom feel blue HIGHEST LOADING <<<NOT THE SAME AS ORIGINAL SCALE>>>
+
+
+#MR6 Conscientiousness
+#8 I leave my belongings around.
+#18 I make a mess of things.
+#23,I get chores done right away. HIGHEST LOADING
+#12,I insult people. HIGHEST LOADING <<<NOT THE SAME AS ORIGINAL SCALE>>>
+#28, I often forget to put things back in their proper place. HIGHEST LOADING
+#33, I like order.HIGHEST LOADING
+#43 I follow a schedule HIGHEST LOADING
+#38, I shirk my duties. HIGHEST LOADING
+#48, I am exacting in my work.HIGHEST LOADING
+
+```
+
+```{r final_loadings}
+#Factor 4 and 5 seems to be measuring the same thing (Agreeableness) --> reduce to 5 factors
+big5_fa_final <- personality_qs %>% 
+  psych::fa(
+    nfactors = 5,
+    scores = "tenBerge"
+    )
+big5_fa_final
+
+#This reduced the cumulative variance of the factors down from 49% to 44%. 
+big5_fa_final %>%
+  parameters::model_parameters(sort = TRUE, threshold = 0.2)
+
+#MR1 - EXTRAVERSION
+# 21 I start conversations.
+# 31 I talk to a lot of different people at parties.
+#46 I am quiet around strangers.
+#1 I am the life of the party.
+#6 I don't talk a lot.
+#36 I don't like to draw attention to myself.
+#16 I keep in the background.
+#26 I have little to say.
+#41 I don't mind being the centre of attention.
+#11 I feel comfortable around people. --> highest loading
+#9 I am relaxed most of the time. HIGHEST LOADING
+#12 I insult people. HIGHEST LOADING
+
+#MR2 - OPENNESS
+#50 I am full of ideas.
+#25 I have excellent ideas.
+#15 I have a vivid imagination. 
+#30 I do not have a good imagination.
+#10 I have difficulty understanding abstract ideas.
+#20 I am not interested in abstract ideas. (HIGHEST LOADING)
+#5 I have a rich vocabulary. HIGHEST LOADING
+#13 I pay attention to details. HIGHEST LOADING - DIFFERENT 
+#40 I use difficult words. HIGHEST LOADING
+#45 I spend time reflecting on things. HIGHEST LOADING
+#48 I am exacting in my work.  HIGHEST LOADING
+
+#MR3 - NEUROTICISM
+#39 I have frequent mood swings.
+#34 I change my mood a lot.
+#44 I get irritated easily.
+#4 I get stressed out easily. - HIGHEST LOADING
+#29 I get upset easily. HIGHEST LOADING
+#49 I often feel blue.HIGHEST LOADING
+#14 I worry about things. HIGHEST LOADING
+#24 I am easily disturbed. HIGHEST LOADING
+#28 I often forget to put things back in their proper place. HIGHEST LOADING - DIFFERENT
+#38 I shirk my duties. HIGHEST LOADING - DIFFERENT 
+#18 I make a mess of things. - HIGHEST LOADING - DIFFERENT
+
+#MR4 CONSIENTIOUSNESS 
+#3 I am always prepared.
+#23 I get chores done right away. HIGHEST LOADING
+#8 I leave my belongings around. HIGHEST LOADING
+#33 I like order. HIGHEST LOADING
+#43 I follow a schedule. HIGHEST LOADING
+
+#MR5 AGREEABLENESS
+#17 I sympathize with others' feelings.
+#42 I feel others' emotions.
+#47 I make people feel at ease. HIGHEST LOADING
+#27 I have a soft heart. HIGHEST LOADING
+#7 I am interested in people.HIGHEST LOADING
+#37 I take time out for others. HIGHEST LOADING
+#32 I am not really interested in others. HIGHEST LOADING
+#2 I feel little concern for others. HIGHEST LOADING
+#22 I am not interested in other people's problems. MORE CONCEPTUAL SENSE
+
+
+#Cross loading items
+#11 I feel comfortable around people.
+#12 I insult people.
+#9 I am relaxed most of the time.
+#4 I get stressed out easily.
+#29 I get upset easily.
+#49 I often feel blue.
+#14 I worry about things.
+#28 I often forget to put things back in their proper place.
+#38 I shirk my duties.
+#18 I make a mess of things. 
+#24 I am easily disturbed.
+#47 I make people feel at ease.
+#27 I have a soft heart.
+#7 I am interested in people.
+#37 I take time out for others.
+#32 I am not really interested in others. 
+#2 I feel little concern for others. 
+#35 I am quick to understand things. REMOVE - MAKES NO SENSE
+#20 I am not interested in abstract ideas.
+#5 I have a rich vocabulary. 
+#13 I pay attention to details.
+#40 I use difficult words.
+#45 I spend time reflecting on things.
+#48 I am exacting in my work. 
+#23 I get chores done right away.
+#22 I am not interested in other people's problems.
+#8 I leave my belongings around.
+#33 I like order.
+#19 I seldom feel blue. - REMOVE - MAKES NO SENSE
+#43 I follow a schedule.
+```
+
+
+```{r reliability_analysis}
+#MR1 - EXTRAVERSION
+# 21 I start conversations.
+# 31 I talk to a lot of different people at parties.
+#46 I am quiet around strangers. -                                      REVERSE CODE THIS
+#1 I am the life of the party.
+#6 I don't talk a lot.                                                  REVERSE CODE THIS
+#36 I don't like to draw attention to myself.                           REVERSE CODE THIS
+#16 I keep in the background.                                           REVERSE CODE THIS
+#26 I have little to say.                                               REVERSE CODE THIS
+#41 I don't mind being the centre of attention.
+#11 I feel comfortable around people. --> highest loading
+#9 I am relaxed most of the time. HIGHEST LOADING
+#12 I insult people. HIGHEST LOADING 
+personality_qs %>% 
+  dplyr::select(p21, p31, p46, p1, p6, p36, p16, p26, p41, p11, p9, p12) %>% 
+  psych::alpha(keys = c(1, 1, -1, 1, -1, -1, -1, -1, 1, 1, 1, 1))
+#we’re looking for values above .7 (https://www.psycholosphere.com/what%20is%20coefficient%20alpha%20by%20Cortina.pdf) for alpha. We have α=0.88[0.83,0.92]. Indicates good  reliability
+
+
+
+#MR2 - OPENNESS
+#50 I am full of ideas.
+#25 I have excellent ideas.
+#15 I have a vivid imagination. 
+#30 I do not have a good imagination.
+#10 I have difficulty understanding abstract ideas.
+#20 I am not interested in abstract ideas. (HIGHEST LOADING)
+#5 I have a rich vocabulary. HIGHEST LOADING
+#13 I pay attention to details. HIGHEST LOADING - DIFFERENT
+#40 I use difficult words. HIGHEST LOADING
+#45 I spend time reflecting on things. HIGHEST LOADING
+#48 I am exacting in my work.  HIGHEST LOADING - DIFFERENT
+personality_qs %>% 
+  dplyr::select(p50, p25, p15, p30, p10, p20, p5, p13, p40, p45, p48) %>% 
+  psych::alpha(keys = c(1, 1, 1, -1, -1, -1, 1, 1, 1, 1, 1))
+#for alpha, we have α=0.81[0.74,0.88]. Indicates good  reliability
+
+
+
+#MR3 - NEUROTICISM
+#39 I have frequent mood swings.
+#34 I change my mood a lot.
+#44 I get irritated easily.
+#4 I get stressed out easily. - HIGHEST LOADING
+#29 I get upset easily. HIGHEST LOADING
+#49 I often feel blue.HIGHEST LOADING
+#14 I worry about things. HIGHEST LOADING
+#24 I am easily disturbed. HIGHEST LOADING
+#28 I often forget to put things back in their proper place. HIGHEST LOADING - DIFFERENT
+#38 I shirk my duties. HIGHEST LOADING - DIFFERENT 
+#18 I make a mess of things. - HIGHEST LOADING - DIFFERENT
+personality_qs %>% 
+  dplyr::select(p39, p34, p44, p4, p29, p49, p14, p24, p28, p38, p18) %>% 
+  psych::alpha(keys = c(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1))
+#for alpha, we have α=0.87[0.83,0.92]. Indicates good  reliability
+
+
+
+#MR4 CONSIENTIOUSNESS 
+#3 I am always prepared.
+#23 I get chores done right away. HIGHEST LOADING
+#8 I leave my belongings around. HIGHEST LOADING
+#33 I like order. HIGHEST LOADING
+#43 I follow a schedule. HIGHEST LOADING
+personality_qs %>% 
+  dplyr::select(p3, p23, p8, p33, p43) %>% 
+  psych::alpha(keys = c(1, 1, -1, 1, 1))
+#for alpha, we have α=0.69[0.58,0.8]. Indicates good  reliability according to https://isdsnet.com/ijds-v7n3-15.pdf
+
+
+
+#MR5 AGREEABLENESS
+#17 I sympathize with others' feelings.
+#42 I feel others' emotions.
+#47 I make people feel at ease. HIGHEST LOADING
+#27 I have a soft heart. HIGHEST LOADING
+#7 I am interested in people.HIGHEST LOADING
+#37 I take time out for others. HIGHEST LOADING
+#32 I am not really interested in others. HIGHEST LOADING
+#2 I feel little concern for others. HIGHEST LOADING
+#22 I am not interested in other people's problems. MORE CONCEPTUAL SENSE
+personality_qs %>% 
+  dplyr::select(p17, p42, p47, p27, p7, p37, p32, p2, p22 ) %>% 
+  psych::alpha(keys = c(1, 1, 1, 1, 1, 1, -1, -1, -1))
+#for alpha, we have α=0.81[0.74,0.88]. Indicates good  reliability 
+
+
+```
+
+
